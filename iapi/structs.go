@@ -9,7 +9,7 @@ duplicate or near duplicate defintions of structs are being defined but can be r
 be in place to ensure everything still works.
 */
 
-//ServiceStruct stores service results
+// ServiceStruct stores service results
 type ServiceStruct struct {
 	Attrs ServiceAttrs `json:"attrs"`
 	Joins struct{}     `json:"joins"`
@@ -140,7 +140,7 @@ type UserAttrs struct {
 	Email string `json:"email"`
 }
 
-//NotificationStruct stores notification results
+// NotificationStruct stores notification results
 type NotificationStruct struct {
 	Attrs NotificationAttrs `json:"attrs"`
 	Joins struct{}          `json:"joins"`

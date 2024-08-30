@@ -15,21 +15,21 @@ type Server struct {
 	Password           string
 	BaseURL            string
 	AllowUnverifiedSSL bool
+	retry_count        int
+	retry_delay        int
 	httpClient         *http.Client
 }
 
-func New(username, password, url string, allowUnverifiedSSL bool) (*Server, error) {
-	return &Server{username, password, url, allowUnverifiedSSL, nil}, nil
+func New(username, password, url string, allowUnverifiedSSL bool, retry_count int, retry_delay int) (*Server, error) {
+	return &Server{username, password, url, allowUnverifiedSSL, retry_count, retry_delay, nil}, nil
 }
 
-func (server *Server) Config(username, password, url string, allowUnverifiedSSL bool) (*Server, error) {
-
+func (server *Server) Config(username, password, url string, allowUnverifiedSSL bool, retry_count int, retry_delay int) (*Server, error) {
 	// TODO : Add code to verify parameters
-	return &Server{username, password, url, allowUnverifiedSSL, nil}, nil
-
+	return &Server{username, password, url, allowUnverifiedSSL, retry_count, retry_delay, nil}, nil
 }
 
-func (server *Server) Connect() error {
+func (server *Server) Connect() (error, int) {
 
 	t := &http.Transport{
 		TLSClientConfig: &tls.Config{
@@ -42,6 +42,7 @@ func (server *Server) Connect() error {
 		Timeout:   time.Second * 60,
 	}
 
+	var err error
 	request, err := http.NewRequest("GET", server.BaseURL, nil)
 	if err != nil {
 		server.httpClient = nil
@@ -51,16 +52,28 @@ func (server *Server) Connect() error {
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Content-Type", "application/json")
 
-	response, err := server.httpClient.Do(request)
+	var response *http.Response
+	retries := 0
+	for {
+		response, err = server.httpClient.Do(request)
 
+		if !((err != nil) || (response == nil)) {
+			break
+		}
+		if retries >= server.retry_count {
+			break
+		}
+		retries += 1
+		time.Sleep(time.Duration(server.retry_delay) * time.Second)
+	}
 	if (err != nil) || (response == nil) {
 		server.httpClient = nil
-		return err
+		return err, retries
 	}
 
 	defer response.Body.Close()
 
-	return nil
+	return nil, retries
 }
 
 // NewAPIRequest ...
