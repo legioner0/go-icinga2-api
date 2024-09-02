@@ -57,7 +57,7 @@ func (server *Server) Connect() (error, int) {
 	for {
 		response, err = server.httpClient.Do(request)
 
-		if !((err != nil) || (response == nil)) {
+		if !((err != nil) || (response == nil || response.StatusCode == 503)) {
 			break
 		}
 		if retries >= server.retryCount {
@@ -66,7 +66,7 @@ func (server *Server) Connect() (error, int) {
 		retries += 1
 		time.Sleep(time.Duration(server.retryDelay) * time.Second)
 	}
-	if (err != nil) || (response == nil) {
+	if (err != nil) || (response == nil || response.StatusCode == 503) {
 		server.httpClient = nil
 		return err, retries
 	}
@@ -101,12 +101,29 @@ func (server *Server) NewAPIRequest(method, APICall string, jsonString []byte) (
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Content-Type", "application/json")
 
-	response, doErr := server.httpClient.Do(request)
+	var response *http.Response
+	var doErr error
+	retries := 0
+	for {
+		response, doErr = server.httpClient.Do(request)
+
+		if !((doErr != nil) || (response == nil || response.StatusCode == 503)) {
+			break
+		}
+
+		if retries >= server.retryCount {
+			break
+		}
+		retries += 1
+		time.Sleep(time.Duration(server.retryDelay) * time.Second)
+	}
+
 	if doErr != nil {
 		results := APIResult{
 			Code:        0,
 			Status:      "Error : Request to server failed : " + doErr.Error(),
 			ErrorString: doErr.Error(),
+			Retries:     retries,
 		}
 		return &results, doErr
 	}
@@ -115,6 +132,10 @@ func (server *Server) NewAPIRequest(method, APICall string, jsonString []byte) (
 	var results APIResult
 	if decodeErr := json.NewDecoder(response.Body).Decode(&results); decodeErr != nil {
 		return nil, decodeErr
+	}
+
+	if results.Retries == 0 { // results.Retries have default value so set it.
+		results.Retries = retries
 	}
 
 	if results.Code == 0 { // results.Code has default value so set it.
