@@ -15,18 +15,18 @@ type Server struct {
 	Password           string
 	BaseURL            string
 	AllowUnverifiedSSL bool
-	retry_count        int
-	retry_delay        int
+	retryCount         int
+	retryDelay         int
 	httpClient         *http.Client
 }
 
-func New(username, password, url string, allowUnverifiedSSL bool, retry_count int, retry_delay int) (*Server, error) {
-	return &Server{username, password, url, allowUnverifiedSSL, retry_count, retry_delay, nil}, nil
+func New(username, password, url string, allowUnverifiedSSL bool, retryCount int, retryDelay int) (*Server, error) {
+	return &Server{username, password, url, allowUnverifiedSSL, retryCount, retryDelay, nil}, nil
 }
 
-func (server *Server) Config(username, password, url string, allowUnverifiedSSL bool, retry_count int, retry_delay int) (*Server, error) {
+func (server *Server) Config(username, password, url string, allowUnverifiedSSL bool, retryCount int, retryDelay int) (*Server, error) {
 	// TODO : Add code to verify parameters
-	return &Server{username, password, url, allowUnverifiedSSL, retry_count, retry_delay, nil}, nil
+	return &Server{username, password, url, allowUnverifiedSSL, retryCount, retryDelay, nil}, nil
 }
 
 func (server *Server) Connect() (error, int) {
@@ -60,11 +60,11 @@ func (server *Server) Connect() (error, int) {
 		if !((err != nil) || (response == nil)) {
 			break
 		}
-		if retries >= server.retry_count {
+		if retries >= server.retryCount {
 			break
 		}
 		retries += 1
-		time.Sleep(time.Duration(server.retry_delay) * time.Second)
+		time.Sleep(time.Duration(server.retryDelay) * time.Second)
 	}
 	if (err != nil) || (response == nil) {
 		server.httpClient = nil
