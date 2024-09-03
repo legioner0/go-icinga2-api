@@ -15,18 +15,18 @@ type Server struct {
 	Password           string
 	BaseURL            string
 	AllowUnverifiedSSL bool
-	retryCount         int
-	retryDelay         int
+	Retries            int
+	RetryDelay         time.Duration
 	httpClient         *http.Client
 }
 
-func New(username, password, url string, allowUnverifiedSSL bool, retryCount int, retryDelay int) (*Server, error) {
-	return &Server{username, password, url, allowUnverifiedSSL, retryCount, retryDelay, nil}, nil
+func New(username, password, url string, allowUnverifiedSSL bool, retries int, retryDelay time.Duration) (*Server, error) {
+	return &Server{username, password, url, allowUnverifiedSSL, retries, retryDelay, nil}, nil
 }
 
-func (server *Server) Config(username, password, url string, allowUnverifiedSSL bool, retryCount int, retryDelay int) (*Server, error) {
+func (server *Server) Config(username, password, url string, allowUnverifiedSSL bool, retries int, retryDelay time.Duration) (*Server, error) {
 	// TODO : Add code to verify parameters
-	return &Server{username, password, url, allowUnverifiedSSL, retryCount, retryDelay, nil}, nil
+	return &Server{username, password, url, allowUnverifiedSSL, retries, retryDelay, nil}, nil
 }
 
 func (server *Server) Connect() (error, int) {
@@ -60,11 +60,11 @@ func (server *Server) Connect() (error, int) {
 		if !((err != nil) || (response == nil || response.StatusCode == 503)) {
 			break
 		}
-		if retries >= server.retryCount {
+		if retries >= server.Retries {
 			break
 		}
-		retries += 1
-		time.Sleep(time.Duration(server.retryDelay) * time.Second)
+		retries++
+		time.Sleep(server.RetryDelay)
 	}
 	if (err != nil) || (response == nil || response.StatusCode == 503) {
 		server.httpClient = nil
@@ -111,11 +111,11 @@ func (server *Server) NewAPIRequest(method, APICall string, jsonString []byte) (
 			break
 		}
 
-		if retries >= server.retryCount {
+		if retries >= server.Retries {
 			break
 		}
-		retries += 1
-		time.Sleep(time.Duration(server.retryDelay) * time.Second)
+		retries++
+		time.Sleep(server.RetryDelay)
 	}
 
 	if doErr != nil {
