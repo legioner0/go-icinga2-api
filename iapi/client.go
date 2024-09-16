@@ -30,7 +30,7 @@ func (server *Server) Config(username, password, url string, allowUnverifiedSSL 
 	return &Server{username, password, url, allowUnverifiedSSL, retries, retryDelay, nil}, nil
 }
 
-func (server *Server) doRequest(method, fullURL string, data io.Reader) (*http.Response, error, int) {
+func (server *Server) doRequest(method, fullURL string, body io.Reader) (*http.Response, error, int) {
 
 	t := &http.Transport{
 		TLSClientConfig: &tls.Config{
@@ -43,11 +43,16 @@ func (server *Server) doRequest(method, fullURL string, data io.Reader) (*http.R
 		Timeout:   time.Second * 60,
 	}
 
+	var bodyBytes []byte
+	if body != nil {
+		bodyBytes, _ = io.ReadAll(body)
+	}
+
 	var response *http.Response
 	var doErr error
 	retries := 0
 	for {
-		request, requestErr := http.NewRequest(method, fullURL, data)
+		request, requestErr := http.NewRequest(method, fullURL, io.NopCloser(bytes.NewBuffer(bodyBytes)))
 		if requestErr != nil {
 			return nil, requestErr, retries
 		}
