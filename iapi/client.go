@@ -19,21 +19,21 @@ type Server struct {
 	BaseURL            string
 	AllowUnverifiedSSL bool
 	CACertFile         string
-	Retries            int
+	Retries            int32
 	RetryDelay         time.Duration
 	httpClient         *http.Client
 }
 
-func New(username, password, url string, allowUnverifiedSSL bool, caCertFile string, retries int, retryDelay time.Duration) (*Server, error) {
+func New(username, password, url string, allowUnverifiedSSL bool, caCertFile string, retries int32, retryDelay time.Duration) (*Server, error) {
 	return &Server{username, password, url, allowUnverifiedSSL, caCertFile, retries, retryDelay, nil}, nil
 }
 
-func (server *Server) Config(username, password, url string, allowUnverifiedSSL bool, caCertFile string, retries int, retryDelay time.Duration) (*Server, error) {
+func (server *Server) Config(username, password, url string, allowUnverifiedSSL bool, caCertFile string, retries int32, retryDelay time.Duration) (*Server, error) {
 	// TODO : Add code to verify parameters
 	return &Server{username, password, url, allowUnverifiedSSL, caCertFile, retries, retryDelay, nil}, nil
 }
 
-func (server *Server) doRequest(method, fullURL string, body io.Reader) (*http.Response, error, int) {
+func (server *Server) doRequest(method, fullURL string, body io.Reader) (*http.Response, error, int32) {
 
 	var caCertPool *x509.CertPool
 	if server.CACertFile != "" {
@@ -64,7 +64,7 @@ func (server *Server) doRequest(method, fullURL string, body io.Reader) (*http.R
 
 	var response *http.Response
 	var doErr error
-	retries := 0
+	retries := int32(0)
 	for {
 		request, requestErr := http.NewRequest(method, fullURL, io.NopCloser(bytes.NewBuffer(bodyBytes)))
 		if requestErr != nil {
@@ -91,7 +91,7 @@ func (server *Server) doRequest(method, fullURL string, body io.Reader) (*http.R
 	return response, doErr, retries
 }
 
-func (server *Server) Connect() (error, int) {
+func (server *Server) Connect() (error, int32) {
 
 	response, doErr, retries := server.doRequest("GET", server.BaseURL, nil)
 
