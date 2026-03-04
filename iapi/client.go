@@ -4,9 +4,11 @@ package iapi
 import (
 	"bytes"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"io"
 	"net/http"
+	"os"
 	"time"
 )
 
@@ -16,25 +18,37 @@ type Server struct {
 	Password           string
 	BaseURL            string
 	AllowUnverifiedSSL bool
+	CACertFile         string
 	Retries            int
 	RetryDelay         time.Duration
 	httpClient         *http.Client
 }
 
-func New(username, password, url string, allowUnverifiedSSL bool, retries int, retryDelay time.Duration) (*Server, error) {
-	return &Server{username, password, url, allowUnverifiedSSL, retries, retryDelay, nil}, nil
+func New(username, password, url string, allowUnverifiedSSL bool, caCertFile string, retries int, retryDelay time.Duration) (*Server, error) {
+	return &Server{username, password, url, allowUnverifiedSSL, caCertFile, retries, retryDelay, nil}, nil
 }
 
-func (server *Server) Config(username, password, url string, allowUnverifiedSSL bool, retries int, retryDelay time.Duration) (*Server, error) {
+func (server *Server) Config(username, password, url string, allowUnverifiedSSL bool, caCertFile string, retries int, retryDelay time.Duration) (*Server, error) {
 	// TODO : Add code to verify parameters
-	return &Server{username, password, url, allowUnverifiedSSL, retries, retryDelay, nil}, nil
+	return &Server{username, password, url, allowUnverifiedSSL, caCertFile, retries, retryDelay, nil}, nil
 }
 
 func (server *Server) doRequest(method, fullURL string, body io.Reader) (*http.Response, error, int) {
 
+	var caCertPool *x509.CertPool
+	if server.CACertFile != "" {
+		caCert, err := os.ReadFile(server.CACertFile)
+		if err != nil {
+			return nil, err, 0
+		}
+		caCertPool := x509.NewCertPool()
+		caCertPool.AppendCertsFromPEM(caCert)
+	}
+
 	t := &http.Transport{
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: server.AllowUnverifiedSSL,
+			RootCAs:            caCertPool,
 		},
 	}
 
