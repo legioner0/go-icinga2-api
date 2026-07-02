@@ -3,13 +3,19 @@ package iapi
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"fmt"
 	"io"
+	"math"
 	"net/http"
+	"strings"
 	"os"
 	"time"
+
+	"github.com/cenkalti/backoff/v5"
 )
 
 // Server ... Use to be ClientConfig
@@ -19,139 +25,125 @@ type Server struct {
 	BaseURL            string
 	AllowUnverifiedSSL bool
 	CACertFile         string
-	Retries            int32
+	Tries              int
 	RetryDelay         time.Duration
 	httpClient         *http.Client
 }
 
-func New(username, password, url string, allowUnverifiedSSL bool, caCertFile string, retries int32, retryDelay time.Duration) (*Server, error) {
-	return &Server{username, password, url, allowUnverifiedSSL, caCertFile, retries, retryDelay, nil}, nil
+func New(username, password, url string, allowUnverifiedSSL bool, caCertFile string, tries int, retryDelay time.Duration) (*Server, error) {
+	return &Server{username, password, url, allowUnverifiedSSL, caCertFile, tries, retryDelay, nil}, nil
 }
 
-func (server *Server) Config(username, password, url string, allowUnverifiedSSL bool, caCertFile string, retries int32, retryDelay time.Duration) (*Server, error) {
+func (server *Server) Config(username, password, url string, allowUnverifiedSSL bool, caCertFile string, tries int, retryDelay time.Duration) (*Server, error) {
 	// TODO : Add code to verify parameters
-	return &Server{username, password, url, allowUnverifiedSSL, caCertFile, retries, retryDelay, nil}, nil
+	return &Server{username, password, url, allowUnverifiedSSL, caCertFile, tries, retryDelay, nil}, nil
 }
 
-func (server *Server) doRequest(method, fullURL string, body io.Reader) (*http.Response, error, int32) {
-
-	var caCertPool *x509.CertPool
-	if server.CACertFile != "" {
-		caCert, err := os.ReadFile(server.CACertFile)
-		if err != nil {
-			return nil, err, 0
+// createHttpClient defensively creates the HTTP client once
+// and allow httpmock to mock the Transport attribute of the HTTP client
+func (server *Server) createHttpClient() {
+	if server.httpClient == nil {
+		var caCertPool *x509.CertPool
+		if server.CACertFile != "" {
+			caCert, err := os.ReadFile(server.CACertFile)
+			if err != nil {
+				return
+			}
+			caCertPool := x509.NewCertPool()
+			caCertPool.AppendCertsFromPEM(caCert)
 		}
-		caCertPool := x509.NewCertPool()
-		caCertPool.AppendCertsFromPEM(caCert)
-	}
 
-	t := &http.Transport{
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: server.AllowUnverifiedSSL,
-			RootCAs:            caCertPool,
-		},
+		server.httpClient = &http.Client{
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{
+					InsecureSkipVerify: server.AllowUnverifiedSSL,
+		        	RootCAs:            caCertPool,
+				},
+			},
+			Timeout: time.Second * 60,
+		}
 	}
+}
 
-	server.httpClient = &http.Client{
-		Transport: t,
-		Timeout:   time.Second * 60,
-	}
+func (server *Server) doRequest(method, fullURL string, body io.Reader) (*http.Response, error) {
+	server.createHttpClient()
 
 	var bodyBytes []byte
 	if body != nil {
 		bodyBytes, _ = io.ReadAll(body)
 	}
 
-	var response *http.Response
-	var doErr error
-	retries := int32(0)
-	for {
-		request, requestErr := http.NewRequest(method, fullURL, io.NopCloser(bytes.NewBuffer(bodyBytes)))
-		if requestErr != nil {
-			return nil, requestErr, retries
-		}
-
-		request.SetBasicAuth(server.Username, server.Password)
-		request.Header.Set("Accept", "application/json")
-		request.Header.Set("Content-Type", "application/json")
-
-		response, doErr = server.httpClient.Do(request)
-
-		if !((doErr != nil) || (response == nil || response.StatusCode == 503)) {
-			break
-		}
-
-		if retries >= server.Retries {
-			break
-		}
-		retries++
-		time.Sleep(server.RetryDelay)
+	request, requestErr := http.NewRequest(method, fullURL, io.NopCloser(bytes.NewBuffer(bodyBytes)))
+	if requestErr != nil {
+		return nil, requestErr
 	}
 
-	return response, doErr, retries
+	request.SetBasicAuth(server.Username, server.Password)
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Content-Type", "application/json")
+
+	return server.httpClient.Do(request)
 }
 
-func (server *Server) Connect() (error, int32) {
+func (server *Server) Connect() error {
 
-	response, doErr, retries := server.doRequest("GET", server.BaseURL, nil)
+	response, doErr := server.doRequest("GET", server.BaseURL, nil)
 
-	if (doErr != nil) || (response == nil || response.StatusCode == 503) {
+	if doErr != nil || response == nil {
 		server.httpClient = nil
-		return doErr, retries
+		return doErr
 	}
 
 	defer response.Body.Close()
 
-	return nil, retries
+	return nil
 }
 
 // NewAPIRequest ...
 func (server *Server) NewAPIRequest(method, APICall string, jsonString []byte) (*APIResult, error) {
-
-	response, doErr, retries := server.doRequest(method, server.BaseURL+APICall, bytes.NewBuffer(jsonString))
-
-	if doErr != nil {
-		results := APIResult{
-			Code:        0,
-			Status:      "Error : Request to server failed : " + doErr.Error(),
-			ErrorString: doErr.Error(),
-			Retries:     retries,
+	operation := func() (*APIResult, error) {
+		response, doErr := server.doRequest(method, server.BaseURL+APICall, bytes.NewBuffer(jsonString))
+		if doErr != nil {
+			results := &APIResult{
+				Code:        0,
+				Status:      "Error : Request to server failed : " + doErr.Error(),
+				ErrorString: doErr.Error(),
+			}
+			return results, backoff.Permanent(doErr)
 		}
-		return &results, doErr
-	}
-	defer response.Body.Close()
+		defer response.Body.Close()
 
-	var results APIResult
-	if decodeErr := json.NewDecoder(response.Body).Decode(&results); decodeErr != nil {
-		return nil, decodeErr
-	}
+		results := &APIResult{}
+		if decodeErr := json.NewDecoder(response.Body).Decode(&results); decodeErr != nil {
+			return nil, backoff.Permanent(decodeErr)
+		}
 
-	if results.Retries == 0 { // results.Retries have default value so set it.
-		results.Retries = retries
-	}
+		if results.Code == 0 {
+			results.Code = response.StatusCode
+		}
 
-	if results.Code == 0 { // results.Code has default value so set it.
-		results.Code = response.StatusCode
-	}
+		if results.Status == "" {
+			results.Status = response.Status
+		}
 
-	if results.Status == "" { // results.Status has default value, so set it.
-		results.Status = response.Status
-	}
-
-	switch results.Code {
-	case 0:
-		results.ErrorString = "Did not get a response code."
-	case 404:
 		results.ErrorString = results.Status
-	case 200:
-		results.ErrorString = results.Status
-	default:
-		results.ErrorString = results.Status
-		//theError := strings.Replace(results.Results.([]interface{})[0].(map[string]interface{})["errors"].([]interface{})[0].(string), "\n", " ", -1)
-		//results.ErrorString = strings.Replace(theError, "Error: ", "", -1)
+		if response.StatusCode == 0 {
+			results.ErrorString = "Did not get a response code."
+		}
 
+		// Retry when Icinga is reloading
+		// The error message returned by Icinga can have a dot ("Icinga is reloading.") or not ("Icinga is reloading")
+		if results.Code == http.StatusServiceUnavailable && strings.HasPrefix(results.Status, "Icinga is reloading") {
+			return results, fmt.Errorf("icinga is reloading")
+		}
+
+		return results, nil
 	}
 
-	return &results, nil
+	ctx := context.Background()
 
+	// Number of tries must be at least 1 to avoid infinite loop
+	tries := uint(math.Max(float64(server.Tries), 1.0))
+
+	return backoff.Retry(ctx, operation, backoff.WithBackOff(backoff.NewConstantBackOff(server.RetryDelay)), backoff.WithMaxTries(tries))
 }

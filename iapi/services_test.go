@@ -5,9 +5,9 @@ import (
 )
 
 func TestServices(t *testing.T) {
-	icingaServer := Server{"root", ICINGA2_API_PASSWORD, "https://127.0.0.1:5665/v1", true, "", 0, 0, nil}
+	icingaServer := Server{ICINGA2_API_USER, ICINGA2_API_PASSWORD, ICINGA2_API_URL, ICINGA2_INSECURE_SKIP_TLS_VERIFY, "", 0, 0, nil}
 	testHostName := "c1-mysql-1"
-	_, err := icingaServer.CreateHost(testHostName, "127.0.0.1", "", "hostalive", nil, nil, nil)
+	_, err := icingaServer.CreateHost(testHostName, "127.0.0.1", "", "hostalive", nil, nil, nil, "")
 	if err != nil {
 		t.Error(err)
 	}
