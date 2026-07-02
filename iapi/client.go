@@ -11,8 +11,8 @@ import (
 	"io"
 	"math"
 	"net/http"
-	"strings"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
@@ -57,7 +57,7 @@ func (server *Server) createHttpClient() {
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{
 					InsecureSkipVerify: server.AllowUnverifiedSSL,
-		        	RootCAs:            caCertPool,
+					RootCAs:            caCertPool,
 				},
 			},
 			Timeout: time.Second * 60,
